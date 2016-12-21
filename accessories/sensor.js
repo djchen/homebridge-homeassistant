@@ -28,6 +28,9 @@ function HomeAssistantSensorFactory(log, data, client) {
   } else if (data.attributes.unit_of_measurement === "%" && data.entity_id.includes("humidity")) {
     service = Service.HumiditySensor;
     characteristic = Characteristic.CurrentRelativeHumidity;
+  } else if (data.attributes.unit_of_measurement === "ppm" && data.entity_id.includes("co2")) {
+    service = Service.CarbonDioxideSensor;
+    characteristic = Characteristic.CarbonDioxideLevel;
   } else if (data.attributes.unit_of_measurement === "lux") {
     service = Service.LightSensor;
     characteristic = Characteristic.CurrentAmbientLightLevel;
@@ -69,6 +72,7 @@ class HomeAssistantSensor {
     return parseFloat(data.state);
   }
 
+
   onEvent(old_state, new_state) {
     this.sensorService.getCharacteristic(this.characteristic)
       .setValue(this.transformData(new_state), null, 'internal');
@@ -90,6 +94,20 @@ class HomeAssistantSensor {
     }.bind(this));
   }
 
+  getStateCarbonDioxideDetected(callback){
+    this.log("fetching carbon dioxide detected state for: " + this.name);
+    this.client.fetchState(this.entity_id, function(data) {
+      if (data) {
+        var co2Value = this.transformData(data);
+        var result = (co2Value > 1000 ? Characteristic.CarbonDioxideDetected.CO2_LEVELS_ABNORMAL : 
+          Characteristic.CarbonDioxideDetected.CO2_LEVELS_NORMAL);
+        callback(null, result);
+      }else{
+        callback(communicationError);
+      }
+    }.bind(this));
+  }
+
   getServices() {
     this.sensorService = new this.service();
     var informationService = new Service.AccessoryInformation();
@@ -102,6 +120,10 @@ class HomeAssistantSensor {
     this.sensorService
       .getCharacteristic(this.characteristic)
       .on('get', this.getState.bind(this));
+    if (this.characteristic === Characteristic.CarbonDioxideLevel) {
+      this.sensorService.getCharacteristic(Characteristic.CarbonDioxideDetected)
+        .on('get', this.getStateCarbonDioxideDetected.bind(this));
+    }
 
     return [informationService, this.sensorService];
   }
